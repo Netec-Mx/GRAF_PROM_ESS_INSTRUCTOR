@@ -1,0 +1,14 @@
+# Reglas de alerta sobre logs. El ruler de Loki las evalúa con LogQL, como Prometheus con PromQL.
+groups:
+  - name: tianguis-logs
+    rules:
+      - alert: CatalogoErroresEnLogs
+        # Respuestas 5xx que catalogo escribió en el último minuto.
+        expr: sum(count_over_time({compose_service="catalogo"} | json | status >= 500 [1m])) > 10
+        for: 2m
+        labels:
+          severity: advertencia
+          team: tienda
+        annotations:
+          summary: "catalogo escribió {{ $value }} respuestas 5xx en el último minuto"
+          description: "Los logs de catalogo muestran más de 10 errores por minuto hace más de 2 minutos."

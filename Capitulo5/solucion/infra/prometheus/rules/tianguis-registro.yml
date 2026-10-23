@@ -1,0 +1,21 @@
+# Reglas de registro de Tianguis. Prometheus las calcula en cada evaluación y guarda el
+# resultado como una serie nueva, así los dashboards y las alertas no repiten la cuenta.
+# Nombre de cada serie  nivel:métrica:operaciones.
+groups:
+  - name: tianguis-registro
+    rules:
+      # Peticiones por segundo de cada servicio en prod, promediadas en 5 minutos.
+      - record: job:http_server_requests:rate5m
+        expr: sum by (job) (rate(http_server_requests_total{ambiente="prod"}[5m]))
+
+      # Proporción de respuestas 5xx de cada servicio en prod, entre 0 y 1.
+      # Sin errores el numerador no tiene series. El "or" pone un cero en su lugar, para que
+      # la proporción valga 0 y no desaparezca.
+      - record: job:http_server_errors:ratio_rate5m
+        expr: |
+          (
+            sum by (job) (rate(http_server_requests_total{ambiente="prod", status=~"5.."}[5m]))
+            or
+            job:http_server_requests:rate5m * 0
+          )
+          / job:http_server_requests:rate5m

@@ -1,0 +1,40 @@
+# Dex, el proveedor OIDC de la Práctica 7. Guarda todo en memoria: al reiniciar no recuerda
+# sesiones, pero los usuarios y el cliente salen de este archivo.
+#
+# El emisor es la dirección con que el navegador ve a Dex. Grafana le pide el token por la red
+# interna, en http://dex:5556.
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+telemetry:
+  http: 0.0.0.0:5558
+
+oauth2:
+  # Sin la pantalla que pide aprobar los permisos en cada entrada.
+  skipApprovalScreen: true
+
+# Grafana es el único cliente. En la dirección de vuelta PUERTO_GRAFANA se reemplaza por el puerto
+# de Grafana en infra/.env, que es 3000 si no se cambió.
+staticClients:
+  - id: grafana
+    name: Grafana del Tianguis
+    secret: SECRETO_OAUTH
+    redirectURIs:
+      - https://localhost:PUERTO_GRAFANA/login/generic_oauth
+
+# Usuarios de prueba con clave. El hash es bcrypt, igual que en los web config.
+enablePasswordDB: true
+staticPasswords:
+  - email: ana@tianguis.local
+    username: ana
+    userID: 1f7b0c1e-0001-4d6a-9e00-000000000001
+    hash: HASH_ANA
+  - email: beto@tianguis.local
+    username: beto
+    userID: 1f7b0c1e-0002-4d6a-9e00-000000000002
+    hash: HASH_BETO

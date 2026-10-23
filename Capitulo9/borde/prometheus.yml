@@ -1,0 +1,17 @@
+# Prometheus de borde, el mercado chico. En la parte de federación se le agrega un job que le
+# pide al Prometheus principal solo las series de negocio.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# El borde guarda poco. Un día alcanza para el tablero local de la feria.
+storage:
+  tsdb:
+    retention:
+      time: 1d
+
+scrape_configs:
+  - job_name: prometheus-borde
+    static_configs:
+      - targets: ["localhost:9090"]

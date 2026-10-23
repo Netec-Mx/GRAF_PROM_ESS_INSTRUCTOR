@@ -1,0 +1,29 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+
+    servicios["Servicios de Tianguis<br/>logs JSON en Docker"]
+
+    subgraph alloy["gpe-alloy"]
+      direction TB
+      fuente["loki.source.docker"]
+      proceso["loki.process tianguis<br/>drop, json, level como etiqueta<br/>trace_id como metadato"]
+      fuente --> proceso
+    end
+
+    loki["gpe-loki<br/>monolítico, TSDB v13<br/>ruler con reglas LogQL"]
+    am["gpe-alertmanager"]
+    webhook["gpe-webhook"]
+    grafana["gpe-grafana<br/>Explore y Logs Drilldown"]
+  end
+
+  servicios -- "salida estándar" --> fuente
+  proceso -- "push" --> loki
+  alumno -- "curl OTLP del refrigerador" --> loki
+  alumno -- "validate, convert y reload" --> alloy
+  loki -- "alerta CatalogoErroresEnLogs" --> am
+  am -- "firing y resolved" --> webhook
+  grafana -- "LogQL" --> loki
+  alumno -- "consultas" --> grafana

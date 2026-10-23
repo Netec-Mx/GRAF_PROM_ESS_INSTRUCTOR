@@ -1,0 +1,32 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe con la capa de escala"]
+    direction LR
+
+    nginx["gpe-nginx<br/>portería en :8088<br/>/grafana /prometheus /borde"]
+
+    subgraph grafanas["Grafana en alta disponibilidad"]
+      direction TB
+      g1["gpe-grafana"]
+      g2["gpe-grafana-2"]
+    end
+
+    pg[("gpe-postgres<br/>libro de actas")]
+    prom["gpe-prometheus<br/>file_sd, http_sd<br/>cupos y descarte"]
+    borde["gpe-prometheus-borde<br/>federa el negocio"]
+    mimir[("gpe-mimir<br/>largo plazo")]
+    servicios["Servicios de Tianguis<br/>prod y dev"]
+  end
+
+  alumno -- "http://localhost:8088" --> nginx
+  nginx --> g1
+  nginx --> g2
+  nginx --> prom
+  nginx --> borde
+  g1 --> pg
+  g2 --> pg
+  prom -- "raspa" --> servicios
+  borde -- "/federate" --> prom
+  prom -- "remote_write" --> mimir
+  g1 -. "datasource Mimir" .-> mimir

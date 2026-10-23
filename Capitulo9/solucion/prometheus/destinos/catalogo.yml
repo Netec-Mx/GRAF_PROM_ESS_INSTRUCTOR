@@ -1,0 +1,4 @@
+# Destinos del job catalogo que vienen de archivo. Prometheus vuelve a leerlo cuando cambia.
+- targets: ["catalogo-dev:8000"]
+  labels:
+    ambiente: dev

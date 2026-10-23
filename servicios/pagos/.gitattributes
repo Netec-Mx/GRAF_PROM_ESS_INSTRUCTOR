@@ -1,0 +1,4 @@
+# El wrapper corre dentro de un contenedor Linux: sus finales de línea deben ser LF también en Windows.
+mvnw text eol=lf
+.mvn/wrapper/maven-wrapper.properties text eol=lf
+mvnw.cmd text eol=crlf

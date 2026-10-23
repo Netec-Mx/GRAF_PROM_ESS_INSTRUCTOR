@@ -1,0 +1,93 @@
+# Pruebas unitarias de las reglas de alerta. Se corren con
+#   promtool test rules /etc/prometheus/pruebas/tianguis-alertas.test.yml
+# Cada prueba inventa unas series, avanza el reloj y dice qué alertas deben estar sonando.
+# El reloj de las pruebas empieza en 0, así que time() vale 0 al inicio.
+rule_files:
+  - ../rules/tianguis-registro.yml
+  - ../rules/tianguis-alertas.yml
+
+evaluation_interval: 15s
+
+tests:
+  # catalogo deja de responder a los 30 segundos.
+  - name: CatalogoCaido
+    interval: 15s
+    input_series:
+      - series: 'up{job="catalogo", ambiente="prod", instance="catalogo:8000"}'
+        values: "1 1 0x20"
+    alert_rule_test:
+      # 45 segundos caído. Todavía no cumple el minuto, así que no suena.
+      - eval_time: 75s
+        alertname: CatalogoCaido
+        exp_alerts: []
+      # Más de un minuto caído. Suena.
+      - eval_time: 2m
+        alertname: CatalogoCaido
+        exp_alerts:
+          - exp_labels:
+              severity: critica
+              team: tienda
+              job: catalogo
+              ambiente: prod
+              instance: catalogo:8000
+            exp_annotations:
+              summary: "catalogo no responde en catalogo:8000"
+              description: "Prometheus no logra raspar catalogo:8000 hace más de 1 minuto. up vale 0."
+
+  # Un problema de 90 segundos. La proporción pasa del 10 % entre los 2:00 y los 3:30.
+  - name: ErroresAltos con un problema corto
+    interval: 15s
+    input_series:
+      - series: 'job:http_server_errors:ratio_rate5m{job="catalogo"}'
+        values: "0x7 0.3x6 0x30"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ErroresAltos
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ErroresAltos
+        exp_alerts: []
+
+  # El mismo problema, pero sigue. Suena 2 minutos después de pasar el umbral.
+  - name: ErroresAltos con un problema que sigue
+    interval: 15s
+    input_series:
+      - series: 'job:http_server_errors:ratio_rate5m{job="catalogo"}'
+        values: "0x7 0.3x30"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ErroresAltos
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ErroresAltos
+        exp_alerts:
+          - exp_labels:
+              severity: advertencia
+              team: tienda
+              job: catalogo
+            exp_annotations:
+              summary: "catalogo falla en el 30% de sus peticiones"
+              description: "La proporción de respuestas 5xx de catalogo en prod pasa del 10 % hace más de 2 minutos. Ahora vale 30%."
+
+  # La última corrida exitosa fue en el segundo 0 y no vuelve a haber otra.
+  - name: ConciliacionSinExito
+    interval: 1m
+    input_series:
+      - series: 'conciliacion_last_success_timestamp_seconds{job="conciliacion"}'
+        values: "0x30"
+    alert_rule_test:
+      # 14 minutos sin éxito. Todavía no.
+      - eval_time: 14m
+        alertname: ConciliacionSinExito
+        exp_alerts: []
+      # 16 minutos sin éxito. Suena.
+      - eval_time: 16m
+        alertname: ConciliacionSinExito
+        exp_alerts:
+          - exp_labels:
+              severity: advertencia
+              team: finanzas
+              job: conciliacion
+            exp_annotations:
+              summary: "La conciliación lleva 16m 0s sin una corrida exitosa"
+              description: "La última corrida exitosa de la conciliación fue hace 16m 0s. Debería correr bien cada 5 minutos."

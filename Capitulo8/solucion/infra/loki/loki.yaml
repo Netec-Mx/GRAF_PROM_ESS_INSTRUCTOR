@@ -1,0 +1,53 @@
+# Loki en modo monolítico con almacenamiento en disco local.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  retention_period: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+# Práctica 8. El ruler evalúa reglas de LogQL cada minuto y manda las alertas a Alertmanager.
+# Las reglas se leen de infra/loki/reglas. La subcarpeta fake es el tenant, porque auth_enabled
+# vale false.
+ruler:
+  alertmanager_url: http://alertmanager:9093
+  enable_api: true
+  evaluation_interval: 1m
+  rule_path: /loki/ruler-temporal
+  storage:
+    type: local
+    local:
+      directory: /etc/loki/reglas
+
+analytics:
+  reporting_enabled: false

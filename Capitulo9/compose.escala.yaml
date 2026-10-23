@@ -1,0 +1,189 @@
+# Práctica 9. Capa de escala. Se suma al stack base con un segundo -f.
+#
+#   docker compose -p gpe --env-file infra/.env -f infra/compose.yaml -f Capitulo9/compose.escala.yaml up -d
+#
+# Las rutas son relativas a infra/, que es la carpeta del primer archivo. Por eso empiezan con
+# ../Capitulo9. Capitulo9/restaurar.sh baja esta capa y deja el stack base como estaba.
+
+x-comunes: &comunes
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-salud: &salud
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 20s
+
+# Lo que comparten las dos réplicas de Grafana. La base de datos, la dirección pública y el
+# aprovisionamiento con el dashboard como código.
+x-grafana: &grafana
+  GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+  GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+  GF_USERS_ALLOW_SIGN_UP: "false"
+  GF_ANALYTICS_REPORTING_ENABLED: "false"
+  GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+  GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+  GF_FEATURE_TOGGLES_ENABLE: suggestedDashboards
+  GF_SMTP_ENABLED: "true"
+  GF_SMTP_HOST: mailpit:1025
+  GF_SMTP_FROM_ADDRESS: grafana@tianguis.local
+  GF_SMTP_FROM_NAME: Grafana Tianguis
+  GF_SMTP_STARTTLS_POLICY: NoStartTLS
+  # El libro de actas pasa a la bóveda. Las dos réplicas leen y escriben la misma base.
+  # La clave no va escrita aquí. Se lee con __FILE de Capitulo9/secretos/postgres, que git
+  # ignora, igual que los secretos de la Práctica 7.
+  GF_DATABASE_TYPE: postgres
+  GF_DATABASE_HOST: postgres:5432
+  GF_DATABASE_NAME: grafana
+  GF_DATABASE_USER: grafana
+  GF_DATABASE_PASSWORD__FILE: /run/secretos/postgres
+  # Grafana se ve desde afuera en http://localhost:8088/grafana/. nginx le saca el prefijo
+  # /grafana antes de pasarle la petición, así que Grafana sigue atendiendo en la raíz.
+  GF_SERVER_ROOT_URL: http://localhost:8088/grafana/
+  GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+  # Las dos réplicas se ponen de acuerdo para no mandar dos veces la misma notificación.
+  GF_UNIFIED_ALERTING_HA_PEERS: grafana:9094,grafana-2:9094
+  # Aprovisionamiento de la capa. Los datasources y el resto son los del stack base. Los
+  # proveedores de dashboards suman la carpeta Como código.
+  GF_PATHS_PROVISIONING: /etc/grafana/provisioning-escala
+
+x-grafana-volumenes: &grafana-volumenes
+  - ./grafana/provisioning/datasources:/etc/grafana/provisioning-escala/datasources:ro
+  - ./grafana/provisioning/alerting:/etc/grafana/provisioning-escala/alerting:ro
+  - ./grafana/provisioning/plugins:/etc/grafana/provisioning-escala/plugins:ro
+  - ../Capitulo9/escala/grafana/dashboards:/etc/grafana/provisioning-escala/dashboards:ro
+  - ./grafana/dashboards:/etc/grafana/dashboards:ro
+  - ../Capitulo9/dashboards:/etc/grafana/dashboards-codigo:ro
+  - ../Capitulo9/secretos:/run/secretos:ro
+
+services:
+  # La portería. Único punto de entrada para Grafana y Prometheus.
+  nginx:
+    container_name: gpe-nginx
+    <<: *comunes
+    image: nginx:1.30.6-alpine
+    volumes:
+      - ../Capitulo9/escala/nginx:/etc/nginx/conf.d:ro
+      - ../Capitulo9/escala/sd:/usr/share/nginx/sd:ro
+    ports:
+      - "127.0.0.1:8088:80"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/salud"]
+    mem_limit: 64m
+
+  # La bóveda municipal. Sin puerto publicado, solo se llega desde la red de Docker.
+  postgres:
+    container_name: gpe-postgres
+    <<: *comunes
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: grafana
+      POSTGRES_USER: grafana
+      POSTGRES_PASSWORD_FILE: /run/secretos/postgres
+    volumes:
+      - postgres-datos:/var/lib/postgresql
+      - ../Capitulo9/secretos:/run/secretos:ro
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "pg_isready", "-U", "grafana", "-d", "grafana"]
+    mem_limit: 256m
+
+  # Primera réplica. Es el Grafana del stack base, ahora sobre PostgreSQL y sin puerto propio.
+  grafana:
+    environment: *grafana
+    volumes: *grafana-volumenes
+    ports: !reset []
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Segunda réplica, sobre la misma base.
+  grafana-2:
+    container_name: gpe-grafana-2
+    <<: *comunes
+    image: grafana/grafana:${GRAFANA_VERSION}
+    environment: *grafana
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning-escala/datasources:ro
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning-escala/alerting:ro
+      - ./grafana/provisioning/plugins:/etc/grafana/provisioning-escala/plugins:ro
+      - ../Capitulo9/escala/grafana/dashboards:/etc/grafana/provisioning-escala/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ../Capitulo9/dashboards:/etc/grafana/dashboards-codigo:ro
+      - ../Capitulo9/secretos:/run/secretos:ro
+      - grafana-2-datos:/var/lib/grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      start_period: 40s
+    mem_limit: 1g
+
+  # Prometheus principal. Lee la configuración de Capitulo9/prometheus y se ve desde afuera en
+  # http://localhost:8088/prometheus/. route-prefix queda en la raíz para que Grafana, pagos y
+  # el Collector lo sigan encontrando en http://prometheus:9090 como siempre.
+  prometheus:
+    command:
+      - --config.file=/etc/prometheus-escala/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+      - --enable-feature=exemplar-storage
+      - --web.external-url=http://localhost:8088/prometheus/
+      - --web.route-prefix=/
+    volumes:
+      - ../Capitulo9/prometheus:/etc/prometheus-escala:ro
+    ports: !reset []
+
+  # El mercado chico. Federa del principal solo las series de negocio.
+  prometheus-borde:
+    container_name: gpe-prometheus-borde
+    <<: *comunes
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.external-url=http://localhost:8088/borde/
+      - --web.route-prefix=/
+    volumes:
+      - ../Capitulo9/borde:/etc/prometheus:ro
+      - borde-datos:/prometheus
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+    mem_limit: 256m
+
+  # El archivo nacional. Recibe todo lo que Prometheus escribe con remote_write.
+  mimir:
+    container_name: gpe-mimir
+    <<: *comunes
+    image: grafana/mimir:3.2.2
+    command:
+      - -config.file=/etc/mimir/mimir.yaml
+    volumes:
+      - ../Capitulo9/escala/mimir:/etc/mimir:ro
+      - mimir-datos:/data
+      - herramientas:/herramientas:ro
+    depends_on:
+      herramientas:
+        condition: service_completed_successfully
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/herramientas/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9009/ready"]
+      start_period: 40s
+    mem_limit: 768m
+
+volumes:
+  postgres-datos:
+  grafana-2-datos:
+  borde-datos:
+  mimir-datos:

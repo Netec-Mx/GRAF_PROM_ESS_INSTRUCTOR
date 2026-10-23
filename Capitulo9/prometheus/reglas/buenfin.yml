@@ -1,0 +1,37 @@
+# Alertas de El Buen Fin. Vienen listas con la práctica. Avisan qué servicio está mal, pero no
+# dicen por qué. Eso es lo que hay que encontrar.
+
+groups:
+  - name: buenfin
+    rules:
+      - alert: ErroresAltos
+        expr: |
+          sum by (job, ambiente) (rate(http_server_requests_total{status=~"5.."}[2m]))
+            / sum by (job, ambiente) (rate(http_server_requests_total[2m])) > 0.05
+        for: 2m
+        labels:
+          severity: advertencia
+        annotations:
+          summary: "{{ $labels.job }} en {{ $labels.ambiente }} responde con error más del 5 %"
+
+      - alert: LatenciaAlta
+        expr: |
+          histogram_quantile(0.95,
+            sum by (job, ambiente, le) (rate(http_server_request_duration_seconds_bucket{job=~"catalogo|pedidos"}[2m]))
+          ) > 0.5
+        for: 2m
+        labels:
+          severity: advertencia
+        annotations:
+          summary: "El p95 de {{ $labels.job }} en {{ $labels.ambiente }} pasa de 500 ms"
+
+      - alert: PagosLentos
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_server_request_duration_seconds_bucket{job="pagos", http_route="/pagos"}[2m]))
+          ) > 1
+        for: 2m
+        labels:
+          severity: advertencia
+        annotations:
+          summary: "El p95 de POST /pagos pasa de 1 segundo"

@@ -1,0 +1,46 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+
+    subgraph fuentes["De dónde salen las métricas"]
+      direction TB
+      catalogo["catalogo<br/>counter nuevo<br/>catalog_product_views_total"]
+      pagos["pagos<br/>OpenTelemetry"]
+      pushgw["Pushgateway<br/>conciliacion y pushes a mano"]
+    end
+
+    subgraph prom["gpe-prometheus"]
+      direction TB
+      registro["Reglas de registro<br/>job:...:rate5m"]
+      alertas["Reglas de alerta<br/>CatalogoCaido, ErroresAltos<br/>ConciliacionSinExito"]
+      pruebas["promtool test rules"]
+    end
+
+    am["gpe-alertmanager<br/>ruteo, agrupación<br/>inhibición, silencios"]
+
+    subgraph graf["gpe-grafana"]
+      direction TB
+      regla["Regla PagosLentos<br/>política team=pagos<br/>plantilla tianguis.resumen"]
+      dash["Dashboard Tianguis · Alertas<br/>anotación chaos_active<br/>Alert list"]
+    end
+
+    mailpit["gpe-mailpit<br/>correos"]
+    webhook["gpe-webhook<br/>una línea JSON por aviso"]
+    loki[("Loki")]
+  end
+
+  catalogo -- "scrape" --> prom
+  pagos -- "OTLP" --> prom
+  pushgw -- "scrape" --> prom
+  alumno -- "OTLP y push a mano" --> prom
+  alertas -- "alertas" --> am
+  am -- "guardia-correo" --> mailpit
+  am -- "tienda-webhook" --> webhook
+  regla -- "correo" --> mailpit
+  regla -- "webhook" --> webhook
+  webhook -. "stdout vía Alloy" .-> loki
+  regla -- "PromQL" --> prom
+  dash -- "PromQL" --> prom
+  alumno -- "caos y amtool" --> am

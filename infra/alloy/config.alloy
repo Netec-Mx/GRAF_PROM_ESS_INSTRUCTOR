@@ -1,0 +1,65 @@
+// Alloy del stack gpe.
+// Descubre los contenedores Docker del proyecto de Compose y manda sus logs a Loki
+// con las etiquetas container y compose_service. Los cuatro contenedores que existen en dos
+// ambientes (catalogo y pedidos, en prod y en dev) llevan además la etiqueta ambiente.
+
+logging {
+	level  = "warn"
+	format = "logfmt"
+}
+
+discovery.docker "contenedores" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "10s"
+
+	// Solo los contenedores de este proyecto. Lo demás que corra en la máquina no se toca.
+	filter {
+		name   = "label"
+		values = ["com.docker.compose.project=" + sys.env("PROYECTO_COMPOSE")]
+	}
+}
+
+discovery.relabel "contenedores" {
+	targets = discovery.docker.contenedores.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "compose_service"
+	}
+
+	// ambiente="prod" para catalogo y pedidos. La expresión tiene que coincidir con el nombre
+	// completo del servicio, así que no alcanza a catalogo-dev ni a pedidos-dev.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "catalogo|pedidos"
+		target_label  = "ambiente"
+		replacement   = "prod"
+	}
+
+	// ambiente="dev" para catalogo-dev y pedidos-dev. El resto queda sin la etiqueta.
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		regex         = "(catalogo|pedidos)-dev"
+		target_label  = "ambiente"
+		replacement   = "dev"
+	}
+}
+
+loki.source.docker "contenedores" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.docker.contenedores.targets
+	relabel_rules = discovery.relabel.contenedores.rules
+	forward_to    = [loki.write.loki.receiver]
+}
+
+loki.write "loki" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

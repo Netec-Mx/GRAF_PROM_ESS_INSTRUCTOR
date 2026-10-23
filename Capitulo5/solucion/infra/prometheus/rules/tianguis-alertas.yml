@@ -1,0 +1,33 @@
+# Reglas de alerta de Tianguis. Prometheus las evalúa cada 15 segundos y manda a Alertmanager
+# las que están sonando. Alertmanager decide a quién avisar.
+groups:
+  - name: tianguis-alertas
+    rules:
+      - alert: CatalogoCaido
+        expr: up{job="catalogo", ambiente="prod"} == 0
+        for: 1m
+        labels:
+          severity: critica
+          team: tienda
+        annotations:
+          summary: "catalogo no responde en {{ $labels.instance }}"
+          description: "Prometheus no logra raspar {{ $labels.instance }} hace más de 1 minuto. up vale {{ $value }}."
+
+      - alert: ErroresAltos
+        expr: job:http_server_errors:ratio_rate5m > 0.10
+        for: 2m
+        labels:
+          severity: advertencia
+          team: tienda
+        annotations:
+          summary: "{{ $labels.job }} falla en el {{ $value | humanizePercentage }} de sus peticiones"
+          description: "La proporción de respuestas 5xx de {{ $labels.job }} en prod pasa del 10 % hace más de 2 minutos. Ahora vale {{ $value | humanizePercentage }}."
+
+      - alert: ConciliacionSinExito
+        expr: time() - conciliacion_last_success_timestamp_seconds > 900
+        labels:
+          severity: advertencia
+          team: finanzas
+        annotations:
+          summary: "La conciliación lleva {{ $value | humanizeDuration }} sin una corrida exitosa"
+          description: "La última corrida exitosa de la conciliación fue hace {{ $value | humanizeDuration }}. Debería correr bien cada 5 minutos."

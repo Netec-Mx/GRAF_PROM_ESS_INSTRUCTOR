@@ -1,0 +1,35 @@
+flowchart LR
+  alumno(["Alumno"])
+  gcom["grafana.com<br/>dashboards sugeridos"]
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+
+    subgraph graf["gpe-grafana"]
+      direction TB
+      sugeridos["Build a dashboard<br/>From suggestions"]
+      subgraph dash["Dashboard Tianguis · RED"]
+        direction TB
+        ahora["Fila Ahora<br/>Stat, Bar gauge, Gauge, Logs"]
+        tendencia["Fila Tendencia<br/>Time series, Time shift 1h<br/>Relative time 5m, Heatmap"]
+        referencia["Fila Referencia<br/>Table con transformaciones<br/>Text, Dashboard list"]
+      end
+    end
+
+    prom[("Prometheus<br/>métricas RED")]
+    loki[("Loki<br/>logs de los contenedores")]
+    catalogo["catalogo<br/>20 % de errores por caos"]
+  end
+
+  json["Capitulo4/mi-dashboard.json"]
+
+  alumno -- "1 revisa y descarta" --> sugeridos
+  sugeridos --> gcom
+  alumno -- "2 arma y guarda" --> dash
+  ahora -- "PromQL" --> prom
+  ahora -- "LogQL" --> loki
+  tendencia -- "PromQL" --> prom
+  referencia -- "PromQL" --> prom
+  prom -- "scrape" --> catalogo
+  loki -. "logs vía Alloy" .- catalogo
+  alumno -- "3 exporta" --> json

@@ -1,0 +1,16 @@
+{
+  "name": "gpe-capturas",
+  "version": "1.0.0",
+  "description": "Genera las capturas de las prácticas del curso con Playwright",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "navegador": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "1.64.0"
+  }
+}

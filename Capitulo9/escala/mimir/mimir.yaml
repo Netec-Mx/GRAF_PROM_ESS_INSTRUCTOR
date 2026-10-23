@@ -1,0 +1,60 @@
+# Mimir en modo monolítico para la Práctica 9. Un solo proceso hace de distributor, ingester,
+# querier, compactor y store gateway, y guarda los bloques en disco local.
+# Sin multiusuario, así que todo lo que llega queda en el tenant anonymous.
+
+target: all
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/bloques
+
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+
+ingester:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+    replication_factor: 1
+
+ruler_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/reglas
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+limits:
+  # Prometheus manda exemplars e histogramas nativos. Mimir los acepta si tiene dónde guardarlos.
+  max_global_exemplars_per_user: 100000
+  native_histograms_ingestion_enabled: true
+  # Límite de series por tenant. Es el mismo concepto que sample_limit, pero del lado de Mimir.
+  max_global_series_per_user: 150000
+
+usage_stats:
+  enabled: false

@@ -1,0 +1,87 @@
+# Datasources aprovisionados del stack gpe.
+# Los uid son fijos porque los dashboards y los enlaces entre datasources los usan.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
+      prometheusType: Prometheus
+      # Métrica a traza: cada exemplar trae una etiqueta trace_id, y el punto de la gráfica
+      # abre esa traza en Tempo.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+          urlDisplayLabel: Ver traza
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      # Log a traza: saca el trace_id de la línea JSON y lo abre en Tempo.
+      derivedFields:
+        - name: trace_id
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: "$${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: Ver traza
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # Traza a logs: busca en Loki las líneas del mismo servicio que contienen el trace_id.
+      # service.name del span se usa como la etiqueta compose_service de Loki.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        tags:
+          - key: service.name
+            value: compose_service
+        filterByTraceID: true
+        filterBySpanID: false
+      # Traza a métricas: consultas de Prometheus para el servicio del span.
+      # service.name del span se usa como la etiqueta job de Prometheus.
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        tags:
+          - key: service.name
+            value: job
+        queries:
+          - name: Peticiones por segundo
+            query: sum(rate(http_server_request_duration_seconds_count{$$__tags}[1m]))
+          - name: Duración p95
+            query: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{$$__tags}[1m])))
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      lokiSearch:
+        datasourceUid: loki
+
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

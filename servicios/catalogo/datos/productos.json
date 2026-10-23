@@ -1,0 +1,22 @@
+[
+  {"sku": "TNG-0001", "nombre": "Aguacate Hass (kg)", "categoria": "frutas-y-verduras", "precio_mxn": "89.00", "stock": 40},
+  {"sku": "TNG-0002", "nombre": "Jitomate saladet (kg)", "categoria": "frutas-y-verduras", "precio_mxn": "32.50", "stock": 120},
+  {"sku": "TNG-0003", "nombre": "Limón con semilla (kg)", "categoria": "frutas-y-verduras", "precio_mxn": "28.00", "stock": 85},
+  {"sku": "TNG-0004", "nombre": "Chile serrano (kg)", "categoria": "frutas-y-verduras", "precio_mxn": "45.90", "stock": 30},
+  {"sku": "TNG-0005", "nombre": "Mango ataulfo (kg)", "categoria": "frutas-y-verduras", "precio_mxn": "54.00", "stock": 0},
+  {"sku": "TNG-0006", "nombre": "Tlayuda con asiento", "categoria": "antojitos", "precio_mxn": "95.00", "stock": 25},
+  {"sku": "TNG-0007", "nombre": "Tamal oaxaqueño de mole", "categoria": "antojitos", "precio_mxn": "28.00", "stock": 60},
+  {"sku": "TNG-0008", "nombre": "Elote preparado", "categoria": "antojitos", "precio_mxn": "35.00", "stock": 45},
+  {"sku": "TNG-0009", "nombre": "Quesadilla de flor de calabaza", "categoria": "antojitos", "precio_mxn": "38.50", "stock": 0},
+  {"sku": "TNG-0010", "nombre": "Esquites en vaso", "categoria": "antojitos", "precio_mxn": "30.00", "stock": 50},
+  {"sku": "TNG-0011", "nombre": "Alebrije de madera de copal", "categoria": "artesanias", "precio_mxn": "450.00", "stock": 8},
+  {"sku": "TNG-0012", "nombre": "Jarro de barro negro", "categoria": "artesanias", "precio_mxn": "180.00", "stock": 15},
+  {"sku": "TNG-0013", "nombre": "Rebozo de algodón", "categoria": "artesanias", "precio_mxn": "620.00", "stock": 0},
+  {"sku": "TNG-0014", "nombre": "Canasta de palma tejida", "categoria": "artesanias", "precio_mxn": "140.00", "stock": 22},
+  {"sku": "TNG-0015", "nombre": "Molcajete de piedra volcánica", "categoria": "artesanias", "precio_mxn": "390.00", "stock": 6},
+  {"sku": "TNG-0016", "nombre": "Frijol negro (kg)", "categoria": "abarrotes", "precio_mxn": "42.00", "stock": 200},
+  {"sku": "TNG-0017", "nombre": "Arroz blanco (kg)", "categoria": "abarrotes", "precio_mxn": "29.90", "stock": 180},
+  {"sku": "TNG-0018", "nombre": "Piloncillo (pieza)", "categoria": "abarrotes", "precio_mxn": "18.00", "stock": 75},
+  {"sku": "TNG-0019", "nombre": "Chocolate de mesa (tablilla)", "categoria": "abarrotes", "precio_mxn": "65.00", "stock": 0},
+  {"sku": "TNG-0020", "nombre": "Café de olla molido (250 g)", "categoria": "abarrotes", "precio_mxn": "110.00", "stock": 35}
+]

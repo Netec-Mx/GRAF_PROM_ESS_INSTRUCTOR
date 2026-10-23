@@ -1,0 +1,92 @@
+# Capa de seguridad de la Práctica 7. Se suma al compose del stack con un segundo -f.
+#
+#   docker compose -p gpe --env-file infra/.env -f infra/compose.yaml \
+#     -f Capitulo7/compose.seguridad.yaml up -d
+#
+# Las rutas son relativas a infra/, la carpeta del primer archivo, por eso empiezan con ../
+# Lo que se escribe aquí reemplaza o se agrega a lo de infra/compose.yaml. Lo demás queda igual.
+# Ninguna clave va escrita en este archivo: se leen de Capitulo7/trabajo/secretos.
+
+services:
+  node-exporter:
+    command:
+      - --web.config.file=/etc/node-exporter/web.yml
+    volumes:
+      - ../Capitulo7/trabajo/node-exporter:/etc/node-exporter:ro
+      - ../Capitulo7/trabajo/certs:/etc/tls:ro
+    healthcheck:
+      # Sano si responde por TLS y pide clave. El 401 confirma las dos cosas.
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null --no-check-certificate https://127.0.0.1:9100/ 2>&1 | grep -q 401"]
+
+  prometheus:
+    command:
+      - --config.file=/etc/prometheus-seguridad/prometheus.yml
+      - --web.config.file=/etc/prometheus-seguridad/web.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+      - --enable-feature=exemplar-storage
+    volumes:
+      - ../Capitulo7/trabajo/prometheus:/etc/prometheus-seguridad:ro
+      - ../Capitulo7/trabajo/certs:/etc/tls:ro
+      - ../Capitulo7/trabajo/secretos:/run/secretos:ro
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null --no-check-certificate https://127.0.0.1:9090/-/ready 2>&1 | grep -q 401"]
+
+  alertmanager:
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --web.config.file=/etc/alertmanager-seguridad/web.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=https://localhost:${PUERTO_ALERTMANAGER}
+    volumes:
+      - ../Capitulo7/trabajo/alertmanager:/etc/alertmanager-seguridad:ro
+      - ../Capitulo7/trabajo/certs:/etc/tls:ro
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null --no-check-certificate https://127.0.0.1:9093/-/ready 2>&1 | grep -q 401"]
+
+  grafana:
+    environment:
+      # HTTPS con el certificado de la CA del curso.
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_CERT_FILE: /etc/tls/grafana.crt
+      GF_SERVER_CERT_KEY: /etc/tls/grafana.key
+      GF_SERVER_ROOT_URL: https://localhost:${PUERTO_GRAFANA}/
+      # La clave de admin sale de un archivo. Solo cuenta la primera vez que arranca Grafana.
+      # La variable sin __FILE viene del compose base y Grafana no acepta las dos: aquí se vacía.
+      GF_SECURITY_ADMIN_PASSWORD: ""
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secretos/grafana_admin
+      # Login con Dex. El navegador va a localhost:5556 y Grafana pide el token por la red interna.
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Dex
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET__FILE: /run/secretos/oauth_grafana
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:5556/dex/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://dex:5556/dex/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://dex:5556/dex/userinfo
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      # Ana entra como Editor. Cualquier otro usuario de Dex entra como Viewer.
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "email == 'ana@tianguis.local' && 'Editor' || 'Viewer'"
+    volumes:
+      - ../Capitulo7/trabajo/certs:/etc/tls:ro
+      - ../Capitulo7/trabajo/secretos:/run/secretos:ro
+      - ../Capitulo7/trabajo/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "--no-check-certificate", "https://127.0.0.1:3000/api/health"]
+
+  dex:
+    container_name: gpe-dex
+    image: dexidp/dex:v2.45.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ../Capitulo7/trabajo/dex:/etc/dex:ro
+    ports:
+      - "127.0.0.1:5556:5556"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5558/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    mem_limit: 64m

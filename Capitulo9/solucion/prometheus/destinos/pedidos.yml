@@ -1,0 +1,4 @@
+# Destinos del job pedidos que vienen de archivo. Prometheus vuelve a leerlo cuando cambia.
+- targets: ["pedidos-dev:8080"]
+  labels:
+    ambiente: dev

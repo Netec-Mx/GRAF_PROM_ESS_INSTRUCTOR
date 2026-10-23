@@ -1,0 +1,10 @@
+# Capa de seguridad de la Práctica 7. Se suma al compose del stack con un segundo -f.
+#
+#   docker compose -p gpe --env-file infra/.env -f infra/compose.yaml \
+#     -f Capitulo7/compose.seguridad.yaml up -d
+#
+# Las rutas son relativas a infra/, la carpeta del primer archivo, por eso empiezan con ../
+# Lo que se escribe aquí reemplaza o se agrega a lo de infra/compose.yaml. Lo demás queda igual.
+# La práctica lo va llenando servicio por servicio. Así como está no cambia nada.
+
+services: {}

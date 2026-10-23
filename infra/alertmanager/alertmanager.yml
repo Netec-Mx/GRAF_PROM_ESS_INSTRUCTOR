@@ -1,0 +1,23 @@
+# Alertmanager del stack gpe. Todas las alertas van por correo a Mailpit y por webhook a
+# gpe-webhook. La Práctica 5 reemplaza este archivo con su propio ruteo.
+
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alertmanager@tianguis.local
+  smtp_require_tls: false
+
+route:
+  receiver: guardia
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: guardia
+    email_configs:
+      - to: guardia@tianguis.local
+        send_resolved: true
+    webhook_configs:
+      - url: http://webhook:8080/alertmanager
+        send_resolved: true

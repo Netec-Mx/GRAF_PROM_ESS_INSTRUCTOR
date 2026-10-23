@@ -1,0 +1,34 @@
+flowchart LR
+  k6(["k6<br/>la clientela"])
+
+  subgraph tienda["Tianguis Digital"]
+    direction TB
+    catalogo["catalogo<br/>Python, vive todo el día<br/>publica /metrics"]
+    pedidos["pedidos<br/>Go, vive todo el día<br/>publica /metrics"]
+    pagos["pagos<br/>Java con agente de OpenTelemetry<br/>no publica /metrics"]
+    conciliacion["conciliacion<br/>proceso por lotes cada 5 minutos<br/>cada corrida dura milisegundos"]
+  end
+
+  subgraph plataforma["Plataforma de observabilidad"]
+    direction TB
+    prometheus[("Prometheus<br/>métricas")]
+    pushgateway["Pushgateway"]
+    otelcol["OpenTelemetry Collector"]
+    loki[("Loki<br/>logs")]
+    tempo[("Tempo<br/>trazas")]
+    grafana["Grafana"]
+  end
+
+  k6 --> catalogo
+  k6 --> pedidos
+  k6 --> pagos
+  pedidos --> catalogo
+  pagos --> pedidos
+  conciliacion --> pedidos
+  conciliacion --> pagos
+
+  tienda -. "¿qué señales salen de cada componente<br/>y cómo llegan?" .-> plataforma
+
+  grafana --> prometheus
+  grafana --> loki
+  grafana --> tempo

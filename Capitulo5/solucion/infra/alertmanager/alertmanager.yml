@@ -1,0 +1,42 @@
+# Alertmanager del stack gpe, con el ruteo de la Práctica 5.
+# El correo sale hacia Mailpit y el webhook hacia gpe-webhook.
+
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alertmanager@tianguis.local
+  smtp_require_tls: false
+
+route:
+  receiver: guardia-correo
+  # Una notificación por cada combinación de alerta y servicio.
+  group_by: ["alertname", "job"]
+  # Espera antes de la primera notificación de un grupo, por si llegan más alertas juntas.
+  group_wait: 30s
+  # Espera entre una notificación y la siguiente del mismo grupo, incluidas las de resuelto.
+  group_interval: 1m
+  # Si nada cambia, repite el aviso cada 4 horas.
+  repeat_interval: 4h
+  routes:
+    # Todo lo del equipo tienda va a su webhook. continue sigue revisando las rutas de abajo.
+    - matchers: ['team="tienda"']
+      receiver: tienda-webhook
+      continue: true
+    # Lo crítico y las advertencias van además por correo a la guardia.
+    - matchers: ['severity=~"critica|advertencia"']
+      receiver: guardia-correo
+
+# Si catalogo está caído, no avisar que sus respuestas fallan. Es el mismo incendio.
+inhibit_rules:
+  - source_matchers: ['alertname="CatalogoCaido"']
+    target_matchers: ['alertname="ErroresAltos"']
+    equal: ["job"]
+
+receivers:
+  - name: guardia-correo
+    email_configs:
+      - to: guardia@tianguis.local
+        send_resolved: true
+  - name: tienda-webhook
+    webhook_configs:
+      - url: http://webhook:8080/alertmanager
+        send_resolved: true

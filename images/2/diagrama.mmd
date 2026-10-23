@@ -1,0 +1,39 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+    config["infra/prometheus/prometheus.yml<br/>global, scrape_configs, relabel_configs"]
+
+    subgraph prom["gpe-prometheus"]
+      direction TB
+      promtool["promtool check config"]
+      servidor[("Prometheus<br/>scrape cada 15 s")]
+    end
+
+    subgraph destinos["Destinos del job catalogo"]
+      direction TB
+      catprod["catalogo:8000<br/>ambiente=prod"]
+      catdev["catalogo-dev:8000<br/>ambiente=dev"]
+    end
+
+    otros["Otros 10 destinos<br/>pedidos, node_exporter, pushgateway..."]
+
+    subgraph graf["gpe-grafana"]
+      direction TB
+      datasource["Datasource Prometheus<br/>aprovisionado"]
+      dashboard["Dashboard<br/>Tianguis · Primer vistazo"]
+    end
+  end
+
+  alumno -- "1 edita" --> config
+  alumno -- "2 valida" --> promtool
+  alumno -- "3 recarga con HUP" --> servidor
+  config --> promtool
+  config --> servidor
+  servidor -- "GET /metrics<br/>agrega equipo=tienda" --> catprod
+  servidor -- "GET /metrics<br/>agrega equipo=tienda" --> catdev
+  servidor -- "GET /metrics" --> otros
+  dashboard --> datasource
+  datasource -- "PromQL" --> servidor
+  alumno -- "4 arma el dashboard" --> dashboard

@@ -1,0 +1,43 @@
+# Configuración de golangci-lint v2 para pedidos.
+# Sin exclusiones ni //nolint: si una regla molesta, se corrige el código.
+version: "2"
+
+run:
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - exhaustive
+    - gocritic
+    - gosec
+    - nilerr
+    - noctx
+    - nolintlint
+    - perfsprint
+    - promlinter
+    - revive
+    - sloglint
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    sloglint:
+      attr-only: true
+      context: all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/RodrigoMSB/graf-prom-ess
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,6 @@
+[
+  {
+    "targets": ["prometheus-borde:9090"],
+    "labels": {"origen": "http_sd"}
+  }
+]

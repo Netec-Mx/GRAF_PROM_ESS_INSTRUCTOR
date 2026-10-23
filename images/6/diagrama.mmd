@@ -1,0 +1,39 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+
+    subgraph graf["gpe-grafana"]
+      direction TB
+      vars["Variables<br/>ambiente, servicio, intervalo<br/>umbral, filtro ad hoc"]
+      subgraph dash["Dashboard Tianguis · Multiambiente"]
+        direction TB
+        servicios["Fila Servicios<br/>un panel por servicio<br/>con enlace a Explore"]
+        errores["Fila Errores sobre el umbral"]
+        pagosfila["Fila Pagos y su pasarela<br/>exemplars"]
+      end
+      explore["Explore y Drilldown"]
+    end
+
+    prom[("Prometheus<br/>métricas y exemplars")]
+    tempo[("Tempo<br/>trazas")]
+    loki[("Loki<br/>logs")]
+    prod["prod<br/>catalogo, pedidos, pagos"]
+    dev["dev<br/>catalogo, pedidos"]
+  end
+
+  hallazgo["Capitulo6/hallazgo.md<br/>trace_id"]
+
+  alumno -- "1 elige ambiente" --> vars
+  vars --> dash
+  servicios -- "PromQL" --> prom
+  errores -- "PromQL" --> prom
+  pagosfila -- "PromQL" --> prom
+  servicios -- "enlace de datos" --> explore
+  pagosfila -- "2 exemplar, Ver traza" --> tempo
+  tempo -- "3 Logs for this trace" --> loki
+  explore --> loki
+  prom -- "scrape y OTLP" --> prod
+  prom -- "scrape" --> dev
+  alumno -- "4 anota" --> hallazgo

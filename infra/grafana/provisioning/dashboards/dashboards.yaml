@@ -1,0 +1,16 @@
+# Proveedor de dashboards. Carga todo JSON que se deje en infra/grafana/dashboards/.
+# La carpeta está vacía a propósito: los dashboards del curso llegan después.
+
+apiVersion: 1
+
+providers:
+  - name: tianguis
+    orgId: 1
+    folder: Tianguis Digital
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

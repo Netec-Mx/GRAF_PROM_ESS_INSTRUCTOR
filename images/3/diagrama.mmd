@@ -1,0 +1,34 @@
+flowchart LR
+  alumno(["Alumno"])
+
+  subgraph compose["Docker Compose, proyecto gpe"]
+    direction LR
+
+    subgraph servicios["Servicios que se consultan"]
+      direction TB
+      catalogo["catalogo:8000<br/>counter, gauge<br/>histograma clásico"]
+      pedidos["pedidos:8080<br/>histograma nativo y clásico<br/>summary"]
+      node["node-exporter:9100<br/>CPU, memoria, carga"]
+    end
+
+    prom[("Prometheus<br/>TSDB en memoria<br/>prometheus_tsdb_head_series")]
+  end
+
+  caos["bin/caos.sh<br/>latencia en pedidos<br/>cardinalidad en catalogo"]
+  rafaga["Capitulo3/rafaga-skus.sh<br/>200 skus distintos"]
+  consultas["Capitulo3/consultas.md<br/>20 consultas"]
+  verificar["Capitulo3/verificar.sh"]
+
+  prom -- "scrape cada 15 s" --> catalogo
+  prom -- "scrape cada 15 s<br/>protobuf" --> pedidos
+  prom -- "scrape cada 15 s" --> node
+  alumno -- "1 curl /metrics" --> catalogo
+  alumno -- "2 PromQL en Query" --> prom
+  alumno -- "3 enciende y apaga" --> caos
+  caos --> pedidos
+  caos --> catalogo
+  alumno -- "4 lanza" --> rafaga
+  rafaga -- "GET /productos/sku" --> catalogo
+  alumno -- "5 escribe" --> consultas
+  verificar -- "lee" --> consultas
+  verificar -- "ejecuta cada consulta" --> prom

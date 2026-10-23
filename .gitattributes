@@ -1,0 +1,19 @@
+# Todo el texto queda con LF en cualquier sistema, también en Windows con core.autocrlf=true.
+# Los scripts de bash, infra/.env.example y los Dockerfile fallan con CRLF.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.alloy text eol=lf
+*.conf  text eol=lf
+*.json  text eol=lf
+*.mmd   text eol=lf
+*.mjs   text eol=lf
+*.md    text eol=lf
+
+# Los scripts de Windows sí van con CRLF.
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+*.png   binary

@@ -1,0 +1,27 @@
+# Proveedores de dashboards de Grafana con la capa de escala.
+# El primero es el mismo del stack base. El segundo carga los dashboards como código de
+# Capitulo9/dashboards y no deja guardar cambios desde la interfaz.
+
+apiVersion: 1
+
+providers:
+  - name: tianguis
+    orgId: 1
+    folder: Tianguis Digital
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false
+
+  - name: como-codigo
+    orgId: 1
+    folder: Como código
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/dashboards-codigo

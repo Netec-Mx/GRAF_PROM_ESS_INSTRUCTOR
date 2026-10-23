@@ -1,0 +1,28 @@
+flowchart LR
+  alumno(["Alumno"])
+  ca["Capitulo7/trabajo<br/>CA, certificados<br/>web config, secretos"]
+
+  subgraph compose["Docker Compose, proyecto gpe con la capa de seguridad"]
+    direction LR
+
+    subgraph graf["gpe-grafana HTTPS"]
+      direction TB
+      login["Login con Dex<br/>roles, equipo, carpeta"]
+      token["Cuenta de servicio<br/>token revocable"]
+    end
+
+    dex["gpe-dex<br/>proveedor OIDC"]
+    prom["gpe-prometheus<br/>TLS y clave"]
+    am["gpe-alertmanager<br/>TLS y clave"]
+    node["gpe-node-exporter<br/>TLS y clave"]
+  end
+
+  alumno -- "1 openssl y htpasswd" --> ca
+  ca -. "montado con la capa" .-> compose
+  alumno -- "https y Sign in with Dex" --> login
+  login -- "OAuth" --> dex
+  graf -- "https y clave del archivo" --> prom
+  graf -- "https y clave del archivo" --> am
+  prom -- "raspa por https con password_file" --> node
+  prom -- "alertas por https" --> am
+  alumno -- "curl con Bearer" --> token

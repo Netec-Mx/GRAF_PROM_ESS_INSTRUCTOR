@@ -1,0 +1,115 @@
+# Prometheus principal con la capa de escala de la Práctica 9.
+# Es una copia de infra/prometheus/prometheus.yml. Los cambios de la práctica se hacen aquí.
+# Las reglas del stack base siguen en /etc/prometheus/rules. Las de El Buen Fin vienen en
+# Capitulo9/prometheus/reglas.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  # Histogramas nativos. Desde Prometheus 3.9 se habilitan con esta opción
+  # de configuración, ya no con un feature flag.
+  scrape_native_histograms: true
+  # Se conservan también los _bucket clásicos para poder comparar ambos.
+  always_scrape_classic_histograms: true
+
+storage:
+  exemplars:
+    max_exemplars: 100000
+  tsdb:
+    # Margen para muestras que llegan por OTLP con algo de retraso.
+    out_of_order_time_window: 10m
+    # Cuánto tiempo se guardan las muestras. Desde Prometheus 3.13 va aquí y no con el flag
+    # --storage.tsdb.retention.time.
+    retention:
+      time: 7d
+
+# Receptor OTLP nativo en /api/v1/otlp/v1/metrics. Por aquí llegan las métricas de pagos,
+# que no tiene /metrics ni job de scrape.
+otlp:
+  # Cómo se traducen los nombres de OpenTelemetry. Este valor es el que trae por defecto:
+  # cambia los puntos por guiones bajos y agrega los sufijos clásicos de unidad y de tipo.
+  # payments.processed (counter) queda como payments_processed_total.
+  translation_strategy: UnderscoreEscapingWithSuffixes
+  # service.name y service.instance.id siempre se convierten en las etiquetas job e instance.
+  # Si el recurso trae service.namespace, job queda como "namespace/nombre".
+  # Estos otros atributos del recurso se copian además como etiquetas de cada serie.
+  promote_resource_attributes:
+    - service.name
+    - service.namespace
+    - service.instance.id
+    - service.version
+    - deployment.environment.name
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules/*.yaml
+  - /etc/prometheus-escala/reglas/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: node_exporter
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["alertmanager:9093"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]
+
+  - job_name: otelcol
+    static_configs:
+      - targets: ["otelcol:8888"]
+
+  # catalogo y pedidos corren en dos ambientes. El job se llama igual en los dos; lo que los
+  # distingue es la etiqueta ambiente, que se pone aquí, a cada destino.
+  # Nada más lleva esa etiqueta: pagos, conciliacion y la infraestructura existen una sola vez.
+  - job_name: catalogo
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["catalogo:8000"]
+        labels:
+          ambiente: prod
+      - targets: ["catalogo-dev:8000"]
+        labels:
+          ambiente: dev
+
+  # pedidos expone la duración HTTP como histograma nativo y clásico a la vez.
+  # Las dos opciones ya valen true en global; se repiten aquí para que se vea qué hace falta:
+  #   scrape_native_histograms          ingiere la parte nativa (y negocia protobuf con el target)
+  #   always_scrape_classic_histograms  conserva además las series _bucket clásicas
+  - job_name: pedidos
+    scrape_interval: 15s
+    scrape_native_histograms: true
+    always_scrape_classic_histograms: true
+    static_configs:
+      - targets: ["pedidos:8080"]
+        labels:
+          ambiente: prod
+      - targets: ["pedidos-dev:8080"]
+        labels:
+          ambiente: dev

@@ -1,0 +1,472 @@
+# Stack de observabilidad de Tianguis Digital (proyecto gpe).
+# Las versiones, credenciales y puertos salen de infra/.env.
+# Se levanta con bin/up.sh, no hace falta invocar docker compose a mano.
+
+name: gpe
+
+x-comunes: &comunes
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-salud: &salud
+  interval: 10s
+  timeout: 5s
+  retries: 6
+  start_period: 20s
+
+services:
+  # Copia un busybox estático a un volumen compartido y termina.
+  # Loki, Alloy y el OTel Collector no traen shell ni wget, así que sus
+  # healthchecks usan este binario.
+  herramientas:
+    container_name: gpe-herramientas
+    image: busybox:${BUSYBOX_VERSION}
+    command: ["sh", "-c", "cp /bin/busybox /herramientas/busybox && chmod 0755 /herramientas/busybox"]
+    volumes:
+      - herramientas:/herramientas
+    mem_limit: 32m
+    restart: "no"
+
+  prometheus:
+    container_name: gpe-prometheus
+    <<: *comunes
+    image: prom/prometheus:${PROMETHEUS_VERSION}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+      - --enable-feature=exemplar-storage
+    volumes:
+      # Se monta la carpeta completa y no el archivo suelto. Muchos editores guardan creando un
+      # archivo nuevo y renombrándolo, y con el archivo suelto el contenedor se queda mirando el
+      # viejo: promtool y la recarga dejarían de ver los cambios. Trae prometheus.yml y rules/.
+      # Alertmanager, Loki, Tempo, Alloy y el Collector montan su carpeta por la misma razón.
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-datos:/prometheus
+    ports:
+      - "127.0.0.1:${PUERTO_PROMETHEUS}:9090"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+    mem_limit: 512m
+
+  alertmanager:
+    container_name: gpe-alertmanager
+    <<: *comunes
+    image: prom/alertmanager:${ALERTMANAGER_VERSION}
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:${PUERTO_ALERTMANAGER}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+    ports:
+      - "127.0.0.1:${PUERTO_ALERTMANAGER}:9093"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+    mem_limit: 128m
+
+  grafana:
+    container_name: gpe-grafana
+    <<: *comunes
+    image: grafana/grafana:${GRAFANA_VERSION}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      # Dashboards sugeridos de la Práctica 4. En Grafana 13.2 vienen apagados: sin este toggle
+      # el botón "Build a dashboard" de un datasource no ofrece la opción "From suggestions".
+      GF_FEATURE_TOGGLES_ENABLE: suggestedDashboards
+      # Correo de Grafana Alerting. Sale hacia Mailpit, igual que el de Alertmanager.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: mailpit:1025
+      GF_SMTP_FROM_ADDRESS: grafana@tianguis.local
+      GF_SMTP_FROM_NAME: Grafana Tianguis
+      GF_SMTP_STARTTLS_POLICY: NoStartTLS
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-datos:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${PUERTO_GRAFANA}:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      start_period: 40s
+    mem_limit: 1g
+
+  loki:
+    container_name: gpe-loki
+    <<: *comunes
+    image: grafana/loki:${LOKI_VERSION}
+    command:
+      - -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki-datos:/loki
+      - herramientas:/herramientas:ro
+    ports:
+      - "127.0.0.1:${PUERTO_LOKI}:3100"
+    depends_on:
+      herramientas:
+        condition: service_completed_successfully
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/herramientas/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3100/ready"]
+      start_period: 40s
+    mem_limit: 512m
+
+  tempo:
+    container_name: gpe-tempo
+    <<: *comunes
+    image: grafana/tempo:${TEMPO_VERSION}
+    command:
+      - -target=all
+      - -config.file=/etc/tempo/tempo.yaml
+    volumes:
+      - ./tempo:/etc/tempo:ro
+      - tempo-datos:/var/tempo
+    ports:
+      - "127.0.0.1:${PUERTO_TEMPO}:3200"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/tempo", "-health"]
+      start_period: 40s
+    mem_limit: 512m
+
+  alloy:
+    container_name: gpe-alloy
+    <<: *comunes
+    image: grafana/alloy:${ALLOY_VERSION}
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=0.0.0.0:12345
+    environment:
+      PROYECTO_COMPOSE: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-datos:/var/lib/alloy/data
+      - herramientas:/herramientas:ro
+    ports:
+      - "127.0.0.1:${PUERTO_ALLOY}:12345"
+    depends_on:
+      herramientas:
+        condition: service_completed_successfully
+      loki:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/herramientas/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:12345/-/ready"]
+    mem_limit: 384m
+
+  otelcol:
+    container_name: gpe-otelcol
+    <<: *comunes
+    image: otel/opentelemetry-collector-contrib:${OTELCOL_VERSION}
+    command:
+      - --config=/etc/otelcol/config.yaml
+    volumes:
+      - ./otelcol:/etc/otelcol:ro
+      - herramientas:/herramientas:ro
+    ports:
+      - "127.0.0.1:${PUERTO_OTLP_GRPC}:4317"
+      - "127.0.0.1:${PUERTO_OTLP_HTTP}:4318"
+    depends_on:
+      herramientas:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_healthy
+      tempo:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/herramientas/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+    mem_limit: 384m
+
+  node-exporter:
+    container_name: gpe-node-exporter
+    <<: *comunes
+    image: prom/node-exporter:${NODE_EXPORTER_VERSION}
+    ports:
+      - "127.0.0.1:${PUERTO_NODE_EXPORTER}:9100"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/"]
+    mem_limit: 64m
+
+  pushgateway:
+    container_name: gpe-pushgateway
+    <<: *comunes
+    image: prom/pushgateway:${PUSHGATEWAY_VERSION}
+    ports:
+      - "127.0.0.1:${PUERTO_PUSHGATEWAY}:9091"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9091/-/ready"]
+    mem_limit: 64m
+
+  mailpit:
+    container_name: gpe-mailpit
+    <<: *comunes
+    image: axllent/mailpit:${MAILPIT_VERSION}
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      MP_MAX_MESSAGES: "500"
+    ports:
+      - "127.0.0.1:${PUERTO_MAILPIT_UI}:8025"
+      - "127.0.0.1:${PUERTO_MAILPIT_SMTP}:1025"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/mailpit", "readyz"]
+    mem_limit: 128m
+
+  # Receptor de webhooks de las alertas. Escribe cada notificación como una línea JSON por stdout,
+  # así queda en Loki. No publica puertos: Alertmanager y Grafana lo llaman por la red interna.
+  webhook:
+    <<: *comunes
+    container_name: gpe-webhook
+    image: gpe/webhook:local
+    build:
+      context: ../servicios/webhook
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/salud', timeout=3)"]
+    mem_limit: 64m
+
+  catalogo:
+    <<: *comunes
+    container_name: gpe-catalogo
+    image: gpe/catalogo:local
+    build:
+      context: ../servicios/catalogo
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        UV_VERSION: ${UV_VERSION}
+    environment:
+      # Token de las rutas /caos. Vacío, /caos no existe.
+      CAOS_TOKEN: ${CAOS_TOKEN}
+    ports:
+      - "127.0.0.1:${PUERTO_CATALOGO}:8000"
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=3)"]
+    mem_limit: 192m
+    # Sin swap extra: la falla de caos memoria llega al límite y el sistema mata el proceso.
+    memswap_limit: 192m
+
+  pedidos:
+    <<: *comunes
+    container_name: gpe-pedidos
+    image: gpe/pedidos:local
+    build:
+      context: ../servicios/pedidos
+      args:
+        GO_VERSION: ${GO_VERSION}
+        DISTROLESS_DIGEST: ${DISTROLESS_DIGEST}
+    environment:
+      CATALOGO_URL: http://catalogo:8000
+      CATALOGO_TIMEOUT: 2s
+      PUERTO: "8080"
+      CAOS_TOKEN: ${CAOS_TOKEN}
+    ports:
+      - "127.0.0.1:${PUERTO_PEDIDOS}:8080"
+    depends_on:
+      catalogo:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      # La imagen no tiene shell: el healthcheck es un subcomando del propio binario.
+      test: ["CMD", "/pedidos", "healthcheck"]
+    mem_limit: 128m
+    memswap_limit: 128m
+
+  # Ambiente dev: las mismas imágenes de catalogo y pedidos, en otros contenedores. Existe para
+  # el dashboard multiambiente. No tiene pagos ni conciliacion.
+  # No llevan build: usan la imagen que construyen catalogo y pedidos.
+  catalogo-dev:
+    <<: *comunes
+    container_name: gpe-catalogo-dev
+    image: gpe/catalogo:local
+    pull_policy: never
+    environment:
+      CAOS_TOKEN: ${CAOS_TOKEN}
+    ports:
+      - "127.0.0.1:${PUERTO_CATALOGO_DEV}:8000"
+    depends_on:
+      # Solo para que la imagen ya esté construida cuando este contenedor se crea.
+      catalogo:
+        condition: service_started
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=3)"]
+    mem_limit: 192m
+    memswap_limit: 192m
+
+  pedidos-dev:
+    <<: *comunes
+    container_name: gpe-pedidos-dev
+    image: gpe/pedidos:local
+    pull_policy: never
+    environment:
+      CATALOGO_URL: http://catalogo-dev:8000
+      CATALOGO_TIMEOUT: 2s
+      PUERTO: "8080"
+      CAOS_TOKEN: ${CAOS_TOKEN}
+    ports:
+      - "127.0.0.1:${PUERTO_PEDIDOS_DEV}:8080"
+    depends_on:
+      catalogo-dev:
+        condition: service_healthy
+      pedidos:
+        condition: service_started
+    healthcheck:
+      <<: *salud
+      test: ["CMD", "/pedidos", "healthcheck"]
+    mem_limit: 128m
+    memswap_limit: 128m
+
+  # pagos no tiene /metrics ni job de scrape: empuja sus métricas por OTLP directo a Prometheus.
+  # Las trazas sí pasan por el OTel Collector, que las manda a Tempo.
+  pagos:
+    <<: *comunes
+    container_name: gpe-pagos
+    image: gpe/pagos:local
+    build:
+      context: ../servicios/pagos
+      args:
+        JAVA_VERSION: ${JAVA_VERSION}
+        OTEL_AGENT_VERSION: ${OTEL_AGENT_VERSION}
+        OTEL_AGENT_SHA256: ${OTEL_AGENT_SHA256}
+    environment:
+      PEDIDOS_URL: http://pedidos:8080
+      PEDIDOS_TIMEOUT: 2s
+      PUERTO: "8080"
+      CAOS_TOKEN: ${CAOS_TOKEN}
+      # Identidad del servicio. En Prometheus, service.name y service.instance.id llegan como
+      # las etiquetas job e instance.
+      # No lleva service.namespace a propósito: con ese atributo Prometheus arma la etiqueta
+      # job como "namespace/nombre" y pagos quedaría como job="tianguis/pagos".
+      OTEL_SERVICE_NAME: pagos
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=curso,service.instance.id=pagos:8080
+      # Trazas: por gRPC al OTel Collector.
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: grpc
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://otelcol:4317
+      # Métricas: por HTTP directo al receptor OTLP de Prometheus, sin pasar por el Collector.
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: http://prometheus:9090/api/v1/otlp/v1/metrics
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
+      # Exemplars: cada medición hecha dentro de una traza muestreada guarda su trace_id.
+      OTEL_METRICS_EXEMPLAR_FILTER: trace_based
+      # Los logs salen por stdout en JSON y los recoge Alloy; el agente no los exporta.
+      OTEL_LOGS_EXPORTER: none
+    ports:
+      - "127.0.0.1:${PUERTO_PAGOS}:8080"
+    depends_on:
+      pedidos:
+        condition: service_healthy
+      otelcol:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      # La imagen no trae curl ni wget: bash abre el socket, pide /salud y busca el 200.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /salud HTTP/1.0\\r\\n\\r\\n' >&3 && read -r linea <&3 && [[ $$linea == *' 200'* ]]"]
+      start_period: 60s
+    # La JVM usa hasta el 55 % para el heap (-XX:MaxRAMPercentage=55 en el Dockerfile): 424 MiB.
+    # El resto queda para la memoria fuera del heap, que con el agente pasa de 300 MiB.
+    mem_limit: 768m
+
+  # conciliacion es un job por lotes: no tiene puerto ni se puede raspar. El planificador lanza
+  # una corrida cada intervalo; cada corrida empuja sus métricas al Pushgateway y termina.
+  conciliacion:
+    <<: *comunes
+    container_name: gpe-conciliacion
+    image: gpe/conciliacion:local
+    build:
+      context: ../servicios/conciliacion
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION}
+        UV_VERSION: ${UV_VERSION}
+    environment:
+      PEDIDOS_URL: http://pedidos:8080
+      PAGOS_URL: http://pagos:8080
+      PUSHGATEWAY_URL: http://pushgateway:9091
+      # Segundos entre corridas. La primera sale 30 s después de arrancar.
+      CONCILIACION_INTERVALO: ${CONCILIACION_INTERVALO}
+      # Se concilian los pedidos creados entre hace VENTANA_S y hace GRACIA_S segundos.
+      CONCILIACION_VENTANA_S: ${CONCILIACION_VENTANA_S}
+      CONCILIACION_GRACIA_S: ${CONCILIACION_GRACIA_S}
+      # conciliacion no tiene /caos, pero sin token tampoco acepta su falla.
+      CAOS_TOKEN: ${CAOS_TOKEN}
+    depends_on:
+      pedidos:
+        condition: service_healthy
+      pagos:
+        condition: service_healthy
+      pushgateway:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      # El planificador toca un archivo de latido; el chequeo ve que tenga menos de dos intervalos.
+      test: ["CMD", "python", "-m", "conciliacion.latido"]
+    mem_limit: 128m
+
+  # k6 es la clientela de la tienda: genera tráfico todo el tiempo, en prod y en dev.
+  # No publica ningún puerto. El número de clientes se cambia en vivo con bin/trafico.sh, que
+  # usa docker exec.
+  k6:
+    <<: *comunes
+    container_name: gpe-k6
+    image: grafana/k6:${K6_VERSION}
+    # --summary-mode=disabled: sin resumen final, k6 no guarda en memoria cada medición.
+    command: ["run", "--quiet", "--summary-mode=disabled", "--no-usage-report", "/trafico/trafico.js"]
+    volumes:
+      - ../servicios/trafico:/trafico:ro
+    depends_on:
+      catalogo:
+        condition: service_healthy
+      pedidos:
+        condition: service_healthy
+      pagos:
+        condition: service_healthy
+      catalogo-dev:
+        condition: service_healthy
+      pedidos-dev:
+        condition: service_healthy
+    healthcheck:
+      <<: *salud
+      # k6 status le pregunta al k6 que está corriendo; falla si no responde.
+      test: ["CMD", "k6", "status"]
+    mem_limit: 256m
+
+volumes:
+  prometheus-datos:
+  grafana-datos:
+  loki-datos:
+  tempo-datos:
+  alloy-datos:
+  herramientas:
