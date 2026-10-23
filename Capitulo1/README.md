@@ -34,7 +34,7 @@ Antes de escalar hay que saber si ese servicio se consulta, envía sus métricas
         <table width="50%">
             <tr>
                 <td style="text-align: center;">
-                    <a href=""><img src="../images/anterior.png" width="40px"></a>
+                    <a href="../"><img src="../images/anterior.png" width="40px"></a>
                     <br>anterior
                 </td>
                 <td style="text-align: center;">
