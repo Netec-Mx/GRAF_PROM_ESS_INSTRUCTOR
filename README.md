@@ -1,4 +1,17 @@
-# Grafana y Prometheus Essentials
+<div>
+<table>
+  <tbody>
+    <tr>
+      <td>
+        <img src="./images/neteclogo.png" width="250px">
+      </td>
+      <td>
+        <h1>Grafana y Prometheus Essentials</h1>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
 
 **Plataforma de Laboratorios**
 
